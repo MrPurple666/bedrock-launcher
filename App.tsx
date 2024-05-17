@@ -1,12 +1,10 @@
 import React, { Component } from 'react';
-import { View, Text, FlatList, TouchableHighlight, TouchableOpacity, Linking, StyleSheet, Image, Button, ActivityIndicator, ProgressCircle } from 'react-native';
-import { ProgressBar } from '@react-native-community/progress-bar-android'; // Consider using ProgressCircle for a more modern look
+import { View, Text, FlatList, TouchableHighlight, TouchableOpacity, Linking, StyleSheet, Image, Button, ActivityIndicator, Alert } from 'react-native';
+import { ProgressBar } from '@react-native-community/progress-bar-android';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
-import { requestManagePermission, checkManagePermission } from 'manage-external-storage';
 import { NavigationContainer } from '@react-navigation/native';
 import RNFS from 'react-native-fs';
-
-const IntentLauncher = require('react-native-intent-launcher');
+import OpenFile from 'react-native-open-file';
 
 const Tab = createMaterialTopTabNavigator();
 
@@ -28,27 +26,25 @@ class App extends Component {
   }
 
   componentDidMount() {
-    checkManagePermission()
-      .then((isManagePermitted) => {
-        this.setState({ isManagePermitted });
-      })
-      .catch((error) => {
-        console.error('Error checking storage permission:', error);
-      });
+    this.checkManagePermission();
     this.fetchData();
   }
+
+  checkManagePermission = async () => {
+    try {
+      const isManagePermitted = await checkManagePermission();
+      this.setState({ isManagePermitted });
+    } catch (error) {
+      console.error('Error checking manage permission:', error);
+    }
+  };
 
   requestManageStoragePermission = async () => {
     try {
       const isManagePermitted = await requestManagePermission();
       this.setState({ isManagePermitted });
-      if (isManagePermitted) {
-        console.log('Storage permission granted.');
-      } else {
-        console.log('Storage permission denied.');
-      }
     } catch (error) {
-      console.error('Error requesting storage permission:', error);
+      console.error('Error requesting manage storage permission:', error);
     }
   };
 
@@ -60,15 +56,13 @@ class App extends Component {
     try {
       const response = await fetch(githubUrl);
       if (!response.ok) {
-        throw new Error('Error in HTTP response');
+        throw new Error('HTTP request error');
       }
       const data = await response.json();
-
       const versions = data.versions.map((version) => ({
         ...version,
         versao: version.versao.split('.').map(Number),
       }));
-
       versions.sort((a, b) => {
         for (let i = 0; i < Math.min(a.versao.length, b.versao.length); i++) {
           if (a.versao[i] !== b.versao[i]) {
@@ -77,8 +71,7 @@ class App extends Component {
         }
         return b.versao.length - a.versao.length;
       });
-
-      this.setState({ versions, isLoading: false });
+      this.setState({ versions });
     } catch (error) {
       console.error('Error fetching data from GitHub:', error);
     } finally {
@@ -86,116 +79,112 @@ class App extends Component {
     }
   };
 
-  downloadApk = async (link, nome) => {
+  downloadApk = (link, nome) => {
     const apkLink = link;
     const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
-    const downloadDest = `<span class="math-inline">\{RNFS\.ExternalStorageDirectoryPath\}/mclauncher/</span>{nomeArquivo}.apk`;
+    const downloadDest = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
 
-    try {
-      await RNFS.mkdir(`${RNFS.ExternalStorageDirectoryPath}/mclauncher`, {
-        NSURLIsExcludedFromBackupKey: true,
-      });
-
-      this.setState({ downloading: true });
-
-      const downloadResult = await RNFS.downloadFile({
-        fromUrl: apkLink,
-        toFile: downloadDest,
-        progressDivider: 10,
-      });
-
-      if (downloadResult.statusCode === 200) {
-        console.log('Download completed:', downloadDest);
+    RNFS.mkdir(`${RNFS.ExternalStorageDirectoryPath}/mclauncher`, {
+      NSURLIsExcludedFromBackupKey: true,
+    })
+      .then(() => {
+        this.setState({ downloading: true, downloadProgress: 0 });
+        return RNFS.downloadFile({
+          fromUrl: apkLink,
+          toFile: downloadDest,
+          progress: (res) => {
+            const progress = res.bytesWritten / res.contentLength;
+            this.setState({ downloadProgress: progress });
+          },
+          progressDivider: 10,
+        }).promise;
+      })
+      .then((res) => {
+        if (res.statusCode === 200) {
+          this.setState({
+            downloadComplete: true,
+            downloadedFilePath: downloadDest,
+            downloadSuccessMessage: 'Download completed, please install the APK from the mclauncher folder in your internal storage.',
+            showDeleteButton: true,
+            downloadErrorMessage: '',
+          });
+          this.promptInstall(downloadDest);
+        } else {
+          this.setState({
+            downloadErrorMessage: 'Error downloading the APK file',
+            downloadSuccessMessage: '',
+          });
+        }
+      })
+      .catch((error) => {
+        console.error('Error downloading APK:', error);
         this.setState({
-          downloadComplete: true,
-          downloadSuccessMessage: 'Download completed. Open the mclauncher folder in your internal storage to install Minecraft.',
-          showDeleteButton: true,
-          downloadErrorMessage: '',
-        });
-      } else {
-        console.log('Error downloading APK');
-        this.setState({
-          downloadErrorMessage: 'Error downloading APK. Please check your internet connection or try again later.',
+          downloadErrorMessage: 'Error downloading APK',
           downloadSuccessMessage: '',
         });
-      }
-    } catch (error) {
-      console.error('Error downloading APK:', error);
-      this.setState({
-        downloadErrorMessage: `Error downloading APK: ${error.message}`,
-        downloadSuccessMessage: '',
+      })
+      .finally(() => {
+        this.setState({ downloading: false });
       });
-    } finally {
-      this.setState({ downloading: false });
-    }
   };
 
-  openDownloadedApk = async () => {
-    const filePath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${this.state.downloadedFilePath}`;
-
-    try {
-      const exists = await RNFS.exists(filePath);
-
-      if (exists) {
-        console.log(`Opening downloaded APK: ${filePath}`);
-        await IntentLauncher.startActivity({
-          action: IntentLauncher.ACTION_VIEW,
-          data: `file://${filePath}`,
-          flags: IntentLauncher.FLAG_ACTIVITY_NEW_TASK, // Open in new task
-          type: 'application/vnd.android.package-archive',
-        });
-      } else {
-        console.log('Downloaded APK not found.');
-        this.setState({ downloadErrorMessage: 'Downloaded APK not found.' });
-      }
-    } catch (error) {
-      console.error('Error opening downloaded APK:', error);
-      this.setState({ downloadErrorMessage: `Error opening downloaded APK: ${error.message}` });
-    }
+  promptInstall = (filePath) => {
+    Alert.alert(
+      'Download Complete',
+      'Do you want to install the APK now?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Install',
+          onPress: () => OpenFile.openDoc([{ url: `file://${filePath}`, fileName: 'Minecraft APK', fileType: 'application/vnd.android.package-archive' }], (error) => {
+            if (error) {
+              console.error('Error opening APK file:', error);
+            }
+          }),
+        },
+      ],
+      { cancelable: false }
+    );
   };
 
-  openLink = async (link, nome) => {
+  openLink = (link, nome) => {
     const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
-    const filePath = `<span class="math-inline">\{RNFS\.ExternalStorageDirectoryPath\}/mclauncher/</span>{nomeArquivo}.apk`;
+    const filePath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
 
-    try {
-      const exists = await RNFS.exists(filePath);
-
-      if (exists) {
-        console.log(`APK found: ${filePath}`);
-        this.setState({ downloadedFilePath: filePath });
-        // Implement logic to open the downloaded APK (consider using IntentLauncher or linking libraries)
-      } else {
-        console.log(`APK not found: ${filePath}`);
-        this.downloadApk(link, nome);
-      }
-    } catch (error) {
-      console.error('Error checking for APK:', error);
-      this.setState({
-        downloadErrorMessage: `Error checking for downloaded APK: ${error.message}`,
+    RNFS.exists(filePath)
+      .then((exists) => {
+        if (exists) {
+          this.promptInstall(filePath);
+        } else {
+          this.downloadApk(link, nome);
+        }
+      })
+      .catch((error) => {
+        console.error('Error checking APK file existence:', error);
       });
-    }
   };
 
-  deleteAllFiles = async () => {
+  deleteAllFiles = () => {
     const mclauncherFolderPath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher`;
 
-    try {
-      const files = await RNFS.readdir(mclauncherFolderPath);
-      const deletePromises = files.map((file) => RNFS.unlink(file.path));
-      await Promise.all(deletePromises);
-
-      console.log('All files deleted.');
-      this.setState({
-        showDeleteButton: true,
-        downloadCompleteMessage: '', // Clear download message
+    RNFS.readDir(mclauncherFolderPath)
+      .then((result) => {
+        const deletePromises = result.map((file) => RNFS.unlink(file.path));
+        return Promise.all(deletePromises);
+      })
+      .then(() => {
+        console.log('All files deleted.');
+        this.setState({
+          showDeleteButton: false,
+          downloadSuccessMessage: '',
+        });
+      })
+      .catch((error) => {
+        console.error('Error deleting files:', error);
       });
-    } catch (error) {
-      console.error('Error deleting files:', error);
-      this.setState({
-        downloadErrorMessage: `Error deleting downloaded files: ${error.message}`,
-      });
-    }
   };
 
   renderVersionItem = ({ item }) => {
@@ -215,7 +204,7 @@ class App extends Component {
       <View style={styles.container}>
         {!this.state.isManagePermitted && (
           <Button
-            title="Storage Permission"
+            title="Request Storage Permission"
             onPress={this.requestManageStoragePermission}
             disabled={this.state.isLoading}
             color="#1a620b"
@@ -229,36 +218,25 @@ class App extends Component {
             <Text style={styles.successMessage}>{this.state.downloadSuccessMessage}</Text>
           )}
         </View>
-        return (
-      <View style={styles.container}>
-        {this.state.downloadedFilePath !== '' && (
-          <Button
-            title="Open Downloaded APK"
-            onPress={this.openDownloadedApk}
-            disabled={!this.state.downloadedFilePath}
-          />
-        )}
         <View style={styles.header}>
           <View style={styles.logoContainer}>
             <Image source={require('./android/app/src/main/res/mipmap-xxxhdpi/title.png')} style={styles.logo} resizeMode="contain" />
           </View>
           <View style={styles.titleContainer}>
-            <Text style={styles.title}>Minecraft Versions:</Text>
+            <Text style={styles.title}>Game Versions:</Text>
           </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Button
-              title="Delete Files"
-              onPress={this.deleteAllFiles}
-              disabled={!this.state.showDeleteButton}
-              color="red"
-            />
-            <Button
-              title="Refresh"
-              onPress={() => this.fetchData()}
-              disabled={this.state.isLoading}
-              color="#1a620b"
-            />
-          </View>
+          <Button
+            title="Delete Files"
+            onPress={this.deleteAllFiles}
+            disabled={!this.state.showDeleteButton}
+            color="red"
+          />
+          <Button
+            title="Reload"
+            onPress={this.fetchData}
+            disabled={this.state.isLoading}
+            color="#1a620b"
+          />
         </View>
         {this.state.isLoading ? (
           <ActivityIndicator size="large" color="white" />
@@ -266,153 +244,215 @@ class App extends Component {
           <NavigationContainer>
             <Tab.Navigator
               screenOptions={{
-                tabBarLabelStyle: styles.tabBarLabel,
-                tabBarStyle: styles.tabBar,
+                tabBarActiveTintColor: 'white',
+                tabBarInactiveTintColor: 'gray',
+                tabBarLabelStyle: { fontSize: 16 },
+                tabBarStyle: { backgroundColor: '#000000' },
               }}
-              initialRouteName="Stable"
             >
-              <Tab.Screen name="Stable" component={() => (
-                <FlatList
-                  data={this.state.versions.filter((version) => version.tipo === 'stavel')}
-                  renderItem={this.renderVersionItem}
-                  keyExtractor={(item) => item.link}
-                  ListHeaderComponent={() => (
-                    <Text style={styles.versionListHeader}>Stable Versions</Text>
-                  )}
-                />
-              )} />
-              <Tab.Screen name="Beta" component={() => (
-                <FlatList
-                  data={this.state.versions.filter((version) => version.tipo === 'beta')}
-                  renderItem={this.renderVersionItem}
-                  keyExtractor={(item) => item.link}
-                  ListHeaderComponent={() => (
-                    <Text style={styles.versionListHeader}>Beta Versions</Text>
-                  )}
-                />
-              )} />
-              <Tab.Screen name="Legacy" component={() => (
-                <FlatList
-                  data={this.state.versions.filter((version) => version.tipo === 'legado')}
-                  renderItem={this.renderVersionItem}
-                  keyExtractor={(item) => item.link}
-                  ListHeaderComponent={() => (
-                    <Text style={styles.versionListHeader}>Legacy Versions</Text>
-                  )}
-                />
-              )} />
-              <Tab.Screen name="About" component={AboutScreen} />
+              <Tab.Screen name="Stable">
+                {() => <StableScreen versions={this.state.versions} openLink={this.openLink} />}
+              </Tab.Screen>
+              <Tab.Screen name="Beta">
+                {() => <BetaScreen versions={this.state.versions} openLink={this.openLink} />}
+              </Tab.Screen>
+              <Tab.Screen name="Legacy">
+                {() => <LegacyScreen versions={this.state.versions} openLink={this.openLink} />}
+              </Tab.Screen>
+              <Tab.Screen name="About">
+                {() => <AboutScreen />}
+              </Tab.Screen>
             </Tab.Navigator>
-            {this.state.downloading && (
-              <View style={styles.downloadProgress}>
-                <ProgressCircle
-                  percent={this.state.downloadProgress}
-                  radius={50}
-                  borderWidth={8}
-                  color="#1a620b"
-                  shadowColor="#ddd"
-                  bgcolor="#fff"
-                />
-                <Text style={styles.downloadProgressText}>Downloading...</Text>
-              </View>
-            )}
           </NavigationContainer>
-          )}
-        </View>
-      );
-    }
+        )}
+        {this.state.downloading && (
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalText}>Downloading...</Text>
+            <ProgressBar
+              styleAttr="Horizontal"
+              color="#1a620b"
+              indeterminate={false}
+              progress={this.state.downloadProgress}
+              style={{ width: '80%' }}
+            />
+          </View>
+        )}
+      </View>
+    );
   }
-  
-  const AboutScreen = () => (
-    <View style={styles.aboutContainer}>
-      <Text style={styles.aboutText}>Minecraft Bedrock Downloader v1.0</Text>
-      <Text style={styles.aboutText}>Contact: @MrPurple666 on Telegram</Text>
+}
+
+function StableScreen({ versions, openLink }) {
+  const stableVersions = versions.filter((version) => version.tipo === 'Stable');
+
+  return (
+<View style={styles.screenContainer}>
+      <FlatList
+        data={stableVersions}
+        keyExtractor={(item) => item.versao.join('.')}
+        renderItem={({ item }) => (
+          <TouchableHighlight
+            onPress={() => openLink(item.link, item.nome)}
+            style={styles.versionItem}
+            underlayColor="#000000"
+          >
+            <Text style={styles.versionText}>{item.nome}</Text>
+          </TouchableHighlight>
+        )}
+      />
     </View>
   );
-  
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: '#000000',
-      paddingHorizontal: 16,
-    },
-    screenContainer: {
-      flex: 1,
-      backgroundColor: '#000000',
-    },
-    logoContainer: {
-      flex: 0,
-      alignItems: 'center',
-    },
-    titleContainer: {
-      flex: 0,
-      alignItems: 'flex-start',
-    },
-    header: {
-      flexDirection: 'column',
-    },
-    logo: {
-      width: 256,
-      height: 128,
-      alignItems: 'center',
-    },
-    reloadButton: {
-      borderRadius: 70,
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-    },
-    errorMessage: {
-      fontSize: 16,
-      color: 'red',
-      marginBottom: 10,
-    },
-    successMessage: {
-      fontSize: 16,
-      color: 'green',
-      marginBottom: 10,
-    },
-    aboutContainer: {
-      flex: 1,
-      backgroundColor: '#000000',
-      padding: 16,
-    },
-    aboutText: {
-      fontSize: 18,
-      color: 'green',
-      marginBottom: 20,
-    },
-    telegramLink: {
-      fontSize: 18,
-      color: '#c912e2',
-      textDecorationLine: 'underline',
-    },
-    title: {
-      fontSize: 24,
-      marginTop: 0,
-      marginBottom: 20,
-      fontWeight: 'bold',
-      color: 'white',
-    },
-    versionItem: {
-      paddingVertical: 10,
-      borderBottomWidth: 1,
-      borderColor: '#ccc',
-    },
-    versionText: {
-      color: 'green',
-      fontSize: 18,
-    },
-    modalContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    },
-    modalText: {
-      fontSize: 24,
-      color: 'white',
-      marginBottom: 20,
-    },
-  });
+}
 
-  export default App;
+function BetaScreen({ versions, openLink }) {
+  const betaVersions = versions.filter((version) => version.tipo === 'Beta');
+
+  return (
+    <View style={styles.screenContainer}>
+      <FlatList
+        data={betaVersions}
+        keyExtractor={(item) => item.versao.join('.')}
+        renderItem={({ item }) => (
+          <TouchableHighlight
+            onPress={() => openLink(item.link, item.nome)}
+            style={styles.versionItem}
+            underlayColor="#000000"
+          >
+            <Text style={styles.versionText}>{item.nome}</Text>
+          </TouchableHighlight>
+        )}
+      />
+    </View>
+  );
+}
+
+function LegacyScreen({ versions, openLink }) {
+  const legacyVersions = versions.filter((version) => version.tipo === 'Legacy');
+
+  return (
+    <View style={styles.screenContainer}>
+      <FlatList
+        data={legacyVersions}
+        keyExtractor={(item) => item.versao.join('.')}
+        renderItem={({ item }) => (
+          <TouchableHighlight
+            onPress={() => openLink(item.link, item.nome)}
+            style={styles.versionItem}
+            underlayColor="#000000"
+          >
+            <Text style={styles.versionText}>{item.nome}</Text>
+          </TouchableHighlight>
+        )}
+      />
+    </View>
+  );
+}
+
+function AboutScreen() {
+  const telegramUsername = 'Mr_Purple_666';
+
+  const openTelegram = () => {
+    Linking.openURL(`https://t.me/${telegramUsername}`);
+  };
+
+  return (
+    <View style={styles.aboutContainer}>
+      <Text style={styles.aboutText}>
+        Este app tem a função de baixar o Minecraft Bedrock (Android), onde você não precisará passar por encurtadores de links e afins. Fique à vontade para entrar em contato conosco no Telegram se tiver alguma dúvida.
+      </Text>
+      <TouchableOpacity onPress={openTelegram}>
+        <Text style={styles.telegramLink}>{telegramUsername}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000000',
+    paddingHorizontal: 16,
+  },
+  screenContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  logoContainer: {
+    flex: 0,
+    alignItems: 'center',
+  },
+  titleContainer: {
+    flex: 0,
+    alignItems: 'flex-start',
+  },
+  header: {
+    flexDirection: 'column',
+  },
+  logo: {
+    width: 256,
+    height: 128,
+    alignItems: 'center',
+  },
+  reloadButton: {
+    borderRadius: 70,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: 'red',
+    marginBottom: 10,
+  },
+  successMessage: {
+    fontSize: 16,
+    color: 'green',
+    marginBottom: 10,
+  },
+  aboutContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+    padding: 16,
+  },
+  aboutText: {
+    fontSize: 18,
+    color: 'green',
+    marginBottom: 20,
+  },
+  telegramLink: {
+    fontSize: 18,
+    color: '#c912e2',
+    textDecorationLine: 'underline',
+  },
+  title: {
+    fontSize: 24,
+    marginTop: 0,
+    marginBottom: 20,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  versionItem: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+  },
+  versionText: {
+    color: 'green',
+    fontSize: 18,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+  },
+  modalText: {
+    fontSize: 24,
+    color: 'white',
+    marginBottom: 20,
+  },
+  messageContainer: {
+    marginBottom: 20,
+  },
+});
+
+export default App;
