@@ -1,3 +1,4 @@
+// Importações necessárias para o React
 import React, { Component } from 'react';
 import { View, Text, FlatList, TouchableHighlight, TouchableOpacity, Linking, StyleSheet, Image, Button, ActivityIndicator } from 'react-native';
 import {ProgressBar} from '@react-native-community/progress-bar-android';
@@ -6,11 +7,14 @@ import { requestManagePermission, checkManagePermission } from 'manage-external-
 import { NavigationContainer } from '@react-navigation/native';
 import RNFS from 'react-native-fs';
 
+// Cria um navegador de abas superior
 const Tab = createMaterialTopTabNavigator();
 
+// Componente principal do aplicativo
 class App extends Component {
   constructor() {
     super();
+   // Estado inicial do componente
     this.state = {
       versions: [],
       isLoading: false,
@@ -24,8 +28,9 @@ class App extends Component {
       showDeleteButton: true,
     };
   }
-
+// Método chamado após o componente ser montado
   componentDidMount() {
+ // Verifica a permissão de gerenciamento de armazenamento e busca os dados
     checkManagePermission()
       .then((isManagePermitted) => {
         this.setState({ isManagePermitted });
@@ -36,6 +41,7 @@ class App extends Component {
     this.fetchData();
   }
 
+// Solicita permissão de gerenciamento de armazenamento
   requestManageStoragePermission = () => {
     requestManagePermission()
       .then((isManagePermitted) => {
@@ -51,6 +57,7 @@ class App extends Component {
       });
   }
 
+// Busca dados do GitHub
   fetchData() {
     this.setState({ isLoading: true });
 
@@ -84,6 +91,7 @@ class App extends Component {
       });
   }
 
+  // Faz o download do APK
   downloadApk = (link, nome) => {
     const apkLink = link;
     const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
@@ -129,6 +137,7 @@ class App extends Component {
       });
   };
 
+// Abre o link ou baixa o APK se não existir
   openLink = (link, nome) => {
     const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
     const filePath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
@@ -148,7 +157,7 @@ class App extends Component {
         console.error('Erro ao verificar a existência do arquivo APK:', error);
       });
   }
-
+// Exclui todos os arquivos da pasta mclauncher
   deleteAllFiles = () => {
     const mclauncherFolderPath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher`;
   
@@ -169,6 +178,7 @@ class App extends Component {
       });
   };
 
+// Renderiza um item da lista de versões
   renderVersionItem = ({ item }) => {
     return (
       <TouchableHighlight
@@ -180,7 +190,7 @@ class App extends Component {
       </TouchableHighlight>
     );
   };
-
+// Método de renderização principal
   render() {
     return (
       <View style={styles.container}>
@@ -263,7 +273,7 @@ class App extends Component {
     );
   }
 }
-
+// Componente para a tela de versões estáveis
 function StableScreen({ versions, openLink }) {
   const stableVersions = versions.filter((version) => version.tipo === 'Stable');
 
