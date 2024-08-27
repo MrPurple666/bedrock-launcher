@@ -295,7 +295,7 @@ function StableScreen({ versions, openLink }) {
     </View>
   );
 }
-
+// Componente para a tela de Sobre
 function AboutScreen() {
   const telegramUsername = 'Mr_Purple_666';
 
@@ -314,7 +314,7 @@ function AboutScreen() {
     </View>
   );
 }
-
+// Componente para a tela de versões beta
 function BetaScreen({ versions, openLink }) {
   const betaVersions = versions.filter((version) => version.tipo === 'Beta');
 
@@ -336,7 +336,7 @@ function BetaScreen({ versions, openLink }) {
     </View>
   );
 }
-
+// Componente para a tela de versões legacy
 function LegacyScreen({ versions, openLink }) {
   const legacyVersions = versions.filter((version) => version.tipo === 'Legacy');
 
@@ -358,7 +358,7 @@ function LegacyScreen({ versions, openLink }) {
     </View>
   );
 }
-
+// Estilos do aplicativo
 const styles = StyleSheet.create({
   container: {
     flex: 1,
