@@ -6,6 +6,7 @@ import { createMaterialTopTabNavigator } from '@react-navigation/material-top-ta
 import { requestManagePermission, checkManagePermission } from 'manage-external-storage';
 import { NavigationContainer } from '@react-navigation/native';
 import RNFS from 'react-native-fs';
+import IntentLauncher from 'react-native-intent-launcher';
 
 // Cria um navegador de abas superior
 const Tab = createMaterialTopTabNavigator();
@@ -108,15 +109,16 @@ class App extends Component {
           progressDivider: 10,
         }).promise;
       })
-      .then((res) => {
-        if (res.statusCode === 200) {
-          console.log('Download concluído:', downloadDest);
-          this.setState({
-            downloadComplete: true,
-            downloadSuccessMessage: 'Download concluído, abra a pasta mclauncher \n na sua memoria interna e instale seu Minecraft',
-            showDeleteButton: true, // Exibir botão de exclusão
-            downloadErrorMessage: '', // Limpar mensagem de erro
-          });
+     .then((res) => {
+    if (res.statusCode === 200) {
+      console.log('Download concluído:', downloadDest);
+      this.setState({
+        downloadComplete: true,
+        downloadSuccessMessage: 'Download concluído. Iniciando a instalação...',
+        showDeleteButton: true,
+        downloadErrorMessage: '',
+      });
+      this.installApk(downloadDest);
         } else {
           console.log('Erro ao baixar o arquivo APK');
           this.setState({
@@ -138,25 +140,41 @@ class App extends Component {
   };
 
 // Abre o link ou baixa o APK se não existir
-  openLink = (link, nome) => {
-    const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
-    const filePath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
+openLink = (link, nome) => {
+  const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
+  const filePath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
 
-    RNFS.exists(filePath)
-      .then((exists) => {
-        if (exists) {
-          console.log(`Arquivo APK encontrado: ${filePath}`);
-          this.setState({ downloadedFilePath: filePath });
-          // Implemente a ação para abrir o arquivo aqui
-        } else {
-          console.log(`Arquivo APK não encontrado: ${filePath}`);
-          this.downloadApk(link, nome);
-        }
-      })
-      .catch((error) => {
-        console.error('Erro ao verificar a existência do arquivo APK:', error);
+  RNFS.exists(filePath)
+    .then((exists) => {
+      if (exists) {
+        console.log(`Arquivo APK encontrado: ${filePath}`);
+        this.setState({ downloadedFilePath: filePath });
+        this.installApk(filePath);
+      } else {
+        console.log(`Arquivo APK não encontrado: ${filePath}`);
+        this.downloadApk(link, nome);
+      }
+    })
+    .catch((error) => {
+      console.error('Erro ao verificar a existência do arquivo APK:', error);
+    });
+};
+installApk = (filePath) => {
+  IntentLauncher.startActivity({
+    action: 'android.intent.action.VIEW',
+    data: `file://${filePath}`,
+    type: 'application/vnd.android.package-archive',
+  })
+    .then(() => {
+      console.log('Instalador de APK iniciado com sucesso');
+    })
+    .catch((error) => {
+      console.error('Erro ao iniciar o instalador de APK:', error);
+      this.setState({
+        downloadErrorMessage: 'Erro ao iniciar a instalação. Por favor, instale manualmente.',
       });
-  }
+    });
+};
 // Exclui todos os arquivos da pasta mclauncher
   deleteAllFiles = () => {
     const mclauncherFolderPath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher`;
