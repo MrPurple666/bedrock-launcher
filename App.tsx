@@ -1,4 +1,5 @@
 // Importações necessárias para o React
+import FileViewer from 'react-native-file-viewer';
 import React, { Component } from 'react';
 import { View, Text, FlatList, TouchableHighlight, TouchableOpacity, Linking, StyleSheet, Image, Button, ActivityIndicator } from 'react-native';
 import {ProgressBar} from '@react-native-community/progress-bar-android';
@@ -6,7 +7,6 @@ import { createMaterialTopTabNavigator } from '@react-navigation/material-top-ta
 import { requestManagePermission, checkManagePermission } from 'manage-external-storage';
 import { NavigationContainer } from '@react-navigation/native';
 import RNFS from 'react-native-fs';
-import IntentLauncher from 'react-native-intent-launcher';
 
 // Cria um navegador de abas superior
 const Tab = createMaterialTopTabNavigator();
@@ -160,18 +160,30 @@ openLink = (link, nome) => {
     });
 };
 installApk = (filePath) => {
-  IntentLauncher.startActivity({
-    action: 'android.intent.action.VIEW',
-    data: `file://${filePath}`,
-    type: 'application/vnd.android.package-archive',
-  })
+  FileViewer.open(filePath, { showOpenWithDialog: true })
     .then(() => {
-      console.log('Instalador de APK iniciado com sucesso');
+      console.log('Arquivo APK aberto com sucesso');
     })
     .catch((error) => {
-      console.error('Erro ao iniciar o instalador de APK:', error);
+      console.error('Erro ao abrir o arquivo APK:', error);
       this.setState({
         downloadErrorMessage: 'Erro ao iniciar a instalação. Por favor, instale manualmente.',
+      });
+      // Caso o FileViewer falhe, tente abrir com Intent
+      this.openWithIntent(filePath);
+    });
+};
+
+openWithIntent = (filePath) => {
+  const android = RNFetchBlob.android;
+  android.actionViewIntent(filePath, 'application/vnd.android.package-archive')
+    .then(() => {
+      console.log('Intent para abrir APK iniciado com sucesso');
+    })
+    .catch((error) => {
+      console.error('Erro ao iniciar intent para abrir APK:', error);
+      this.setState({
+        downloadErrorMessage: 'Não foi possível iniciar a instalação. Por favor, instale manualmente.',
       });
     });
 };
