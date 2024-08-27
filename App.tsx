@@ -1,4 +1,5 @@
 // Importações necessárias para o React
+import FileViewer from 'react-native-file-viewer';
 import React, { Component } from 'react';
 import { View, Text, FlatList, TouchableHighlight, TouchableOpacity, Linking, StyleSheet, Image, Button, ActivityIndicator } from 'react-native';
 import {ProgressBar} from '@react-native-community/progress-bar-android';
@@ -108,15 +109,16 @@ class App extends Component {
           progressDivider: 10,
         }).promise;
       })
-      .then((res) => {
-        if (res.statusCode === 200) {
-          console.log('Download concluído:', downloadDest);
-          this.setState({
-            downloadComplete: true,
-            downloadSuccessMessage: 'Download concluído, abra a pasta mclauncher \n na sua memoria interna e instale seu Minecraft',
-            showDeleteButton: true, // Exibir botão de exclusão
-            downloadErrorMessage: '', // Limpar mensagem de erro
-          });
+     .then((res) => {
+    if (res.statusCode === 200) {
+      console.log('Download concluído:', downloadDest);
+      this.setState({
+        downloadComplete: true,
+        downloadSuccessMessage: 'Download concluído. Iniciando a instalação...',
+        showDeleteButton: true,
+        downloadErrorMessage: '',
+      });
+      this.installApk(downloadDest);
         } else {
           console.log('Erro ao baixar o arquivo APK');
           this.setState({
@@ -138,25 +140,54 @@ class App extends Component {
   };
 
 // Abre o link ou baixa o APK se não existir
-  openLink = (link, nome) => {
-    const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
-    const filePath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
+openLink = (link, nome) => {
+  const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
+  const filePath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
 
-    RNFS.exists(filePath)
-      .then((exists) => {
-        if (exists) {
-          console.log(`Arquivo APK encontrado: ${filePath}`);
-          this.setState({ downloadedFilePath: filePath });
-          // Implemente a ação para abrir o arquivo aqui
-        } else {
-          console.log(`Arquivo APK não encontrado: ${filePath}`);
-          this.downloadApk(link, nome);
-        }
-      })
-      .catch((error) => {
-        console.error('Erro ao verificar a existência do arquivo APK:', error);
+  RNFS.exists(filePath)
+    .then((exists) => {
+      if (exists) {
+        console.log(`Arquivo APK encontrado: ${filePath}`);
+        this.setState({ downloadedFilePath: filePath });
+        this.installApk(filePath);
+      } else {
+        console.log(`Arquivo APK não encontrado: ${filePath}`);
+        this.downloadApk(link, nome);
+      }
+    })
+    .catch((error) => {
+      console.error('Erro ao verificar a existência do arquivo APK:', error);
+    });
+};
+// Instalador do apk TODO: download em background
+installApk = (filePath) => {
+  FileViewer.open(filePath, { showOpenWithDialog: true })
+    .then(() => {
+      console.log('Arquivo APK aberto com sucesso');
+    })
+    .catch((error) => {
+      console.error('Erro ao abrir o arquivo APK:', error);
+      this.setState({
+        downloadErrorMessage: 'Erro ao iniciar a instalação. Por favor, instale manualmente.',
       });
-  }
+      // Caso o FileViewer falhe, tente abrir com Intent
+      this.openWithIntent(filePath);
+    });
+};
+
+openWithIntent = (filePath) => {
+  const android = RNFetchBlob.android;
+  android.actionViewIntent(filePath, 'application/vnd.android.package-archive')
+    .then(() => {
+      console.log('Intent para abrir APK iniciado com sucesso');
+    })
+    .catch((error) => {
+      console.error('Erro ao iniciar intent para abrir APK:', error);
+      this.setState({
+        downloadErrorMessage: 'Não foi possível iniciar a instalação. Por favor, instale manualmente.',
+      });
+    });
+};
 // Exclui todos os arquivos da pasta mclauncher
   deleteAllFiles = () => {
     const mclauncherFolderPath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher`;
@@ -257,6 +288,7 @@ class App extends Component {
             </Tab.Navigator>
           </NavigationContainer>
         )}
+// não funciona corretamente, apenas estético.
         {this.state.downloading && (
           <View style={styles.modalContainer}>
             <Text style={styles.modalText}>Baixando...</Text>
