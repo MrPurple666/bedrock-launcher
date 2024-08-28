@@ -287,19 +287,19 @@ openWithIntent = (filePath) => {
             </Tab.Navigator>
           </NavigationContainer>
         )}
-        {this.state.downloading && (
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalText}>Baixando...</Text>
-            <ProgressBar
-              styleAttr="Horizontal"
-              color="#1a620b"
-              indeterminate={true}
-              progress={this.state.downloadProgress}
-              style={{ width: '80%' }}
-            />
-          </View>
-        )}
-      </View>
+	{this.state.downloading && (
+	<View style={styles.modalContainer}>
+	<Text style={styles.modalText}>Baixando... {this.state.downloadProgress.toFixed(2)}%</Text>
+	<ProgressBar
+        styleAttr="Horizontal"
+        color="#1a620b"
+        indeterminate={false}
+        progress={this.state.downloadProgress / 100}
+        style={{ width: '80%' }}
+      />
+     </View>
+    )} 
+     </View>
     );
   }
 }
