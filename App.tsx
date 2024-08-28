@@ -159,6 +159,7 @@ openLink = (link, nome) => {
       console.error('Erro ao verificar a existência do arquivo APK:', error);
     });
 };
+// Instalador do apk TODO: download em background
 installApk = (filePath) => {
   FileViewer.open(filePath, { showOpenWithDialog: true })
     .then(() => {
@@ -287,6 +288,7 @@ openWithIntent = (filePath) => {
             </Tab.Navigator>
           </NavigationContainer>
         )}
+
 	{this.state.downloading && (
 	<View style={styles.modalContainer}>
 	<Text style={styles.modalText}>Baixando... {this.state.downloadProgress.toFixed(2)}%</Text>
