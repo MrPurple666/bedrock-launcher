@@ -27,6 +27,9 @@ class App extends Component {
       downloadErrorMessage: '',
       downloadSuccessMessage: '',
       showDeleteButton: true,
+      downloadSpeed: 0,
+      downloadedSize: 0,
+      totalSize: 0,
     };
   }
 // Método chamado após o componente ser montado
@@ -93,27 +96,44 @@ class App extends Component {
   }
 
  // Faz o download do APK
-downloadApk = (link, nome) => {
-  const apkLink = link;
-  const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
-  const downloadDest = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
+  downloadApk = (link, nome) => {
+    const apkLink = link;
+    const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
+    const downloadDest = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
 
-  RNFS.mkdir(`${RNFS.ExternalStorageDirectoryPath}/mclauncher`, {
-    NSURLIsExcludedFromBackupKey: true,
-  })
-    // HACK: Faz a interface funcionar, a funcionalidade não.
-    .then(() => {
-      this.setState({ downloading: true, downloadProgress: 0 });
-      const options = {
-        fromUrl: apkLink,
-        toFile: downloadDest,
-        progress: (res) => {
-          const progress = (res.bytesWritten / res.contentLength) * 100;
-          this.setState({ downloadProgress: progress });
-        },
-      };
-      return RNFS.downloadFile(options).promise;
+    let lastProgress = 0;
+    let lastTime = Date.now();
+
+    RNFS.mkdir(`${RNFS.ExternalStorageDirectoryPath}/mclauncher`, {
+      NSURLIsExcludedFromBackupKey: true,
     })
+      .then(() => {
+        this.setState({ downloading: true, downloadProgress: 0, downloadSpeed: 0, downloadedSize: 0, totalSize: 0 });
+        const options = {
+          fromUrl: apkLink,
+          toFile: downloadDest,
+          progress: (res) => {
+            const progress = (res.bytesWritten / res.contentLength) * 100;
+            const currentTime = Date.now();
+            const timeDiff = (currentTime - lastTime) / 1000; // in seconds
+            
+            if (timeDiff > 0.5) { // Update every 500ms
+              const speedBps = (res.bytesWritten - lastProgress) / timeDiff;
+              
+              this.setState({
+                downloadProgress: progress,
+                downloadSpeed: speedBps,
+                downloadedSize: res.bytesWritten,
+                totalSize: res.contentLength,
+              });
+
+              lastProgress = res.bytesWritten;
+              lastTime = currentTime;
+            }
+          },
+        };
+        return RNFS.downloadFile(options).promise;
+      })
     .then((res) => {
       if (res.statusCode === 200) {
         console.log('Download concluído:', downloadDest);
@@ -215,6 +235,18 @@ openWithIntent = (filePath) => {
       });
   };
 
+  formatSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  formatSpeed = (bps) => {
+    if (bps < 1024) return `${bps.toFixed(2)} B/s`;
+    if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(2)} KB/s`;
+    return `${(bps / (1024 * 1024)).toFixed(2)} MB/s`;
+  };
+
 // Renderiza um item da lista de versões
   renderVersionItem = ({ item }) => {
     return (
@@ -295,9 +327,17 @@ openWithIntent = (filePath) => {
           </NavigationContainer>
         )}
 // Barra de download: TODO: Modificações na funcionalidade
-        {this.state.downloading && (
+         {this.state.downloading && (
           <View style={styles.modalContainer}>
-            <Text style={styles.modalText}>Baixando... {this.state.downloadProgress.toFixed(2)}%</Text>
+            <Text style={styles.modalText}>
+              Baixando... {this.state.downloadProgress.toFixed(2)}%
+            </Text>
+            <Text style={styles.modalText}>
+              {this.formatSize(this.state.downloadedSize)} / {this.formatSize(this.state.totalSize)}
+            </Text>
+            <Text style={styles.modalText}>
+              Velocidade: {this.formatSpeed(this.state.downloadSpeed)}
+            </Text>
             <ProgressBar
               styleAttr="Horizontal"
               color="#1a620b"
@@ -476,9 +516,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
   modalText: {
-    fontSize: 24,
+    fontSize: 18,
     color: 'white',
-    marginBottom: 20,
+    marginBottom: 10,
   },
 });
 
