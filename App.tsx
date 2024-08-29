@@ -92,52 +92,57 @@ class App extends Component {
       });
   }
 
-  // Faz o download do APK
-  downloadApk = (link, nome) => {
-    const apkLink = link;
-    const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
-    const downloadDest = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
+ // Faz o download do APK
+downloadApk = (link, nome) => {
+  const apkLink = link;
+  const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
+  const downloadDest = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
 
-    RNFS.mkdir(`${RNFS.ExternalStorageDirectoryPath}/mclauncher`, {
-      NSURLIsExcludedFromBackupKey: true,
+  RNFS.mkdir(`${RNFS.ExternalStorageDirectoryPath}/mclauncher`, {
+    NSURLIsExcludedFromBackupKey: true,
+  })
+    .then(() => {
+      this.setState({ downloading: true, downloadProgress: 0 });
+      const options = {
+        fromUrl: apkLink,
+        toFile: downloadDest,
+        progress: (res) => {
+          const progress = (res.bytesWritten / res.contentLength) * 100;
+          this.setState({ downloadProgress: progress });
+        },
+      };
+      return RNFS.downloadFile(options).promise;
     })
-      .then(() => {
-        this.setState({ downloading: true });
-        return RNFS.downloadFile({
-          fromUrl: apkLink,
-          toFile: downloadDest,
-          progressDivider: 10,
-        }).promise;
-      })
-     .then((res) => {
-    if (res.statusCode === 200) {
-      console.log('Download concluído:', downloadDest);
-      this.setState({
-        downloadComplete: true,
-        downloadSuccessMessage: 'Download concluído. Iniciando a instalação...',
-        showDeleteButton: true,
-        downloadErrorMessage: '',
-      });
-      this.installApk(downloadDest);
-        } else {
-          console.log('Erro ao baixar o arquivo APK');
-          this.setState({
-            downloadErrorMessage: 'Erro ao baixar o arquivo APK',
-            downloadSuccessMessage: '', // Limpar mensagem de sucesso
-          });
-        }
-      })
-      .catch((error) => {
-        console.error('Erro ao fazer o download do APK:', error);
+    .then((res) => {
+      if (res.statusCode === 200) {
+        console.log('Download concluído:', downloadDest);
         this.setState({
-          downloadErrorMessage: 'Erro ao fazer o download do APK',
-          downloadSuccessMessage: '', // Limpar mensagem de sucesso
+          downloadComplete: true,
+          downloadSuccessMessage: 'Download concluído. Iniciando a instalação...',
+          showDeleteButton: true,
+          downloadErrorMessage: '',
+          downloading: false,
+          downloadProgress: 100,
         });
-      })
-      .finally(() => {
-        this.setState({ downloading: false });
+        this.installApk(downloadDest);
+      } else {
+        console.log('Erro ao baixar o arquivo APK');
+        this.setState({
+          downloadErrorMessage: 'Erro ao baixar o arquivo APK',
+          downloadSuccessMessage: '',
+          downloading: false,
+        });
+      }
+    })
+    .catch((error) => {
+      console.error('Erro ao fazer o download do APK:', error);
+      this.setState({
+        downloadErrorMessage: 'Erro ao fazer o download do APK',
+        downloadSuccessMessage: '',
+        downloading: false,
       });
-  };
+    });
+};
 
 // Abre o link ou baixa o APK se não existir
 openLink = (link, nome) => {
@@ -289,19 +294,19 @@ openWithIntent = (filePath) => {
           </NavigationContainer>
         )}
 
-	{this.state.downloading && (
-	<View style={styles.modalContainer}>
-	<Text style={styles.modalText}>Baixando... {this.state.downloadProgress.toFixed(2)}%</Text>
-	<ProgressBar
-        styleAttr="Horizontal"
-        color="#1a620b"
-        indeterminate={false}
-        progress={this.state.downloadProgress / 100}
-        style={{ width: '80%' }}
-      />
-     </View>
-    )} 
-     </View>
+        {this.state.downloading && (
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalText}>Baixando... {this.state.downloadProgress.toFixed(2)}%</Text>
+            <ProgressBar
+              styleAttr="Horizontal"
+              color="#1a620b"
+              indeterminate={false}
+              progress={this.state.downloadProgress / 100}
+              style={{ width: '80%' }}
+            />
+          </View>
+        )}
+      </View>
     );
   }
 }
