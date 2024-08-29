@@ -101,6 +101,7 @@ downloadApk = (link, nome) => {
   RNFS.mkdir(`${RNFS.ExternalStorageDirectoryPath}/mclauncher`, {
     NSURLIsExcludedFromBackupKey: true,
   })
+    // HACK: Faz a interface funcionar, a funcionalidade não.
     .then(() => {
       this.setState({ downloading: true, downloadProgress: 0 });
       const options = {
@@ -293,7 +294,7 @@ openWithIntent = (filePath) => {
             </Tab.Navigator>
           </NavigationContainer>
         )}
-
+// Barra de download: TODO: Modificações na funcionalidade
         {this.state.downloading && (
           <View style={styles.modalContainer}>
             <Text style={styles.modalText}>Baixando... {this.state.downloadProgress.toFixed(2)}%</Text>
