@@ -17,27 +17,26 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          java-version: '17'  # Updated to Java 17
+          distribution: 'temurin'  # Use Temurin (Adoptium) distribution
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Clean npm cache and reinstall dependencies
         run: |
           npm cache clean --force
           rm -rf node_modules
           rm package-lock.json
           npm install
-          npm install -g react-native-cli
-          npm install @expo/vector-icons
-          npm install -g react-native-cli
-          npm install react-native-file-viewer
-          npm install react-native-push-notification
-          npm install react-native-background-actions
-          npm install react-native-fs
+
+      - name: Update npm packages
+        run: |
+          npm install -g npm-check-updates  # Install npm-check-updates
+          ncu -u  # Update package.json to the latest versions
+          npm install  # Install updated dependencies and update package-lock.json
 
       - name: Display package.json
         run: cat package.json
@@ -50,13 +49,6 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v2
-
-      - name: Install Android SDK components
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "build-tools;29.0.3"
-          sdkmanager "cmdline-tools;latest"
-          sdkmanager "ndk;25.2.9519653"  # Install Android NDK
 
       - name: Cache Gradle packages
         uses: actions/cache@v3
@@ -71,21 +63,17 @@ jobs:
       - name: Make Gradlew Executable
         run: cd android && chmod +x ./gradlew
 
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "build-tools;29.0.3"
+          sdkmanager "cmdline-tools;latest"
+          sdkmanager "ndk;25.2.9519653"  # Install Android NDK
+
       - name: Build Android Release
         run: |
           cd android
           ./gradlew assembleRelease
-
-      # Optional: Sign the APK (uncomment and configure secrets if needed)
-      # - name: Sign Android Release
-      #   uses: r0adkll/sign-android-release@v1
-      #   id: sign_app
-      #   with:
-      #     releaseDirectory: android/app/build/outputs/apk/release
-      #     signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}
-      #     alias: ${{ secrets.ANDROID_ALIAS }}
-      #     keyStorePassword: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
-      #     keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Upload APK as Artifact
         uses: actions/upload-artifact@v4
@@ -99,7 +87,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v1.0.0-${{ github.run_number }} 
+          tag_name: v1.0.0-${{ github.run_number }} # Adjust the tag name as needed
           release_name: Release v1.0.0-${{ github.run_number }}
           draft: false
           prerelease: false
