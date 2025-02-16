@@ -1,4 +1,3 @@
-// Importações necessárias para o React
 import FileViewer from 'react-native-file-viewer';
 import React, { Component } from 'react';
 import { View, Text, FlatList, TouchableHighlight, TouchableOpacity, Linking, StyleSheet, Image, Button, ActivityIndicator } from 'react-native';
@@ -8,14 +7,11 @@ import { requestManagePermission, checkManagePermission } from 'manage-external-
 import { NavigationContainer } from '@react-navigation/native';
 import RNFS from 'react-native-fs';
 
-// Cria um navegador de abas superior
 const Tab = createMaterialTopTabNavigator();
 
-// Componente principal do aplicativo
 class App extends Component {
   constructor() {
     super();
-   // Estado inicial do componente
     this.state = {
       versions: [],
       isLoading: false,
@@ -27,11 +23,13 @@ class App extends Component {
       downloadErrorMessage: '',
       downloadSuccessMessage: '',
       showDeleteButton: true,
+      downloadSpeed: 0,
+      downloadedSize: 0,
+      totalSize: 0,
     };
   }
-// Método chamado após o componente ser montado
+
   componentDidMount() {
- // Verifica a permissão de gerenciamento de armazenamento e busca os dados
     checkManagePermission()
       .then((isManagePermitted) => {
         this.setState({ isManagePermitted });
@@ -42,7 +40,6 @@ class App extends Component {
     this.fetchData();
   }
 
-// Solicita permissão de gerenciamento de armazenamento
   requestManageStoragePermission = () => {
     requestManagePermission()
       .then((isManagePermitted) => {
@@ -58,7 +55,6 @@ class App extends Component {
       });
   }
 
-// Busca dados do GitHub
   fetchData() {
     this.setState({ isLoading: true });
 
@@ -92,28 +88,44 @@ class App extends Component {
       });
   }
 
- // Faz o download do APK
-downloadApk = (link, nome) => {
-  const apkLink = link;
-  const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
-  const downloadDest = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
+  downloadApk = (link, nome) => {
+    const apkLink = link;
+    const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
+    const downloadDest = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
 
-  RNFS.mkdir(`${RNFS.ExternalStorageDirectoryPath}/mclauncher`, {
-    NSURLIsExcludedFromBackupKey: true,
-  })
-    // HACK: Faz a interface funcionar, a funcionalidade não.
-    .then(() => {
-      this.setState({ downloading: true, downloadProgress: 0 });
-      const options = {
-        fromUrl: apkLink,
-        toFile: downloadDest,
-        progress: (res) => {
-          const progress = (res.bytesWritten / res.contentLength) * 100;
-          this.setState({ downloadProgress: progress });
-        },
-      };
-      return RNFS.downloadFile(options).promise;
+    let lastProgress = 0;
+    let lastTime = Date.now();
+
+    RNFS.mkdir(`${RNFS.ExternalStorageDirectoryPath}/mclauncher`, {
+      NSURLIsExcludedFromBackupKey: true,
     })
+      .then(() => {
+        this.setState({ downloading: true, downloadProgress: 0, downloadSpeed: 0, downloadedSize: 0, totalSize: 0 });
+        const options = {
+          fromUrl: apkLink,
+          toFile: downloadDest,
+          progress: (res) => {
+            const progress = (res.bytesWritten / res.contentLength) * 100;
+            const currentTime = Date.now();
+            const timeDiff = (currentTime - lastTime) / 1000; // in seconds
+            
+            if (timeDiff > 0.5) { // Update every 500ms
+              const speedBps = (res.bytesWritten - lastProgress) / timeDiff;
+              
+              this.setState({
+                downloadProgress: progress,
+                downloadSpeed: speedBps,
+                downloadedSize: res.bytesWritten,
+                totalSize: res.contentLength,
+              });
+
+              lastProgress = res.bytesWritten;
+              lastTime = currentTime;
+            }
+          },
+        };
+        return RNFS.downloadFile(options).promise;
+      })
     .then((res) => {
       if (res.statusCode === 200) {
         console.log('Download concluído:', downloadDest);
@@ -145,56 +157,54 @@ downloadApk = (link, nome) => {
     });
 };
 
-// Abre o link ou baixa o APK se não existir
-openLink = (link, nome) => {
-  const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
-  const filePath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
+  openLink = (link, nome) => {
+    const nomeArquivo = nome || link.substring(link.lastIndexOf('/') + 1);
+    const filePath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher/${nomeArquivo}.apk`;
 
-  RNFS.exists(filePath)
-    .then((exists) => {
-      if (exists) {
-        console.log(`Arquivo APK encontrado: ${filePath}`);
-        this.setState({ downloadedFilePath: filePath });
-        this.installApk(filePath);
-      } else {
-        console.log(`Arquivo APK não encontrado: ${filePath}`);
-        this.downloadApk(link, nome);
-      }
-    })
-    .catch((error) => {
-      console.error('Erro ao verificar a existência do arquivo APK:', error);
-    });
-};
-// Instalador do apk TODO: download em background
-installApk = (filePath) => {
-  FileViewer.open(filePath, { showOpenWithDialog: true })
-    .then(() => {
-      console.log('Arquivo APK aberto com sucesso');
-    })
-    .catch((error) => {
-      console.error('Erro ao abrir o arquivo APK:', error);
-      this.setState({
-        downloadErrorMessage: 'Erro ao iniciar a instalação. Por favor, instale manualmente.',
+    RNFS.exists(filePath)
+      .then((exists) => {
+        if (exists) {
+          console.log(`Arquivo APK encontrado: ${filePath}`);
+          this.setState({ downloadedFilePath: filePath });
+          this.installApk(filePath);
+        } else {
+          console.log(`Arquivo APK não encontrado: ${filePath}`);
+          this.downloadApk(link, nome);
+        }
+      })
+      .catch((error) => {
+        console.error('Erro ao verificar a existência do arquivo APK:', error);
       });
-      // Caso o FileViewer falhe, tente abrir com Intent
-      this.openWithIntent(filePath);
-    });
-};
+  };
 
-openWithIntent = (filePath) => {
-  const android = RNFetchBlob.android;
-  android.actionViewIntent(filePath, 'application/vnd.android.package-archive')
-    .then(() => {
-      console.log('Intent para abrir APK iniciado com sucesso');
-    })
-    .catch((error) => {
-      console.error('Erro ao iniciar intent para abrir APK:', error);
-      this.setState({
-        downloadErrorMessage: 'Não foi possível iniciar a instalação. Por favor, instale manualmente.',
+  installApk = (filePath) => {
+    FileViewer.open(filePath, { showOpenWithDialog: true })
+      .then(() => {
+        console.log('Arquivo APK aberto com sucesso');
+      })
+      .catch((error) => {
+        console.error('Erro ao abrir o arquivo APK:', error);
+        this.setState({
+          downloadErrorMessage: 'Erro ao iniciar a instalação. Por favor, instale manualmente.',
+        });
+        this.openWithIntent(filePath);
       });
-    });
-};
-// Exclui todos os arquivos da pasta mclauncher
+  };
+
+  openWithIntent = (filePath) => {
+    const android = RNFetchBlob.android;
+    android.actionViewIntent(filePath, 'application/vnd.android.package-archive')
+      .then(() => {
+        console.log('Intent para abrir APK iniciado com sucesso');
+      })
+      .catch((error) => {
+        console.error('Erro ao iniciar intent para abrir APK:', error);
+        this.setState({
+          downloadErrorMessage: 'Não foi possível iniciar a instalação. Por favor, instale manualmente.',
+        });
+      });
+  };
+
   deleteAllFiles = () => {
     const mclauncherFolderPath = `${RNFS.ExternalStorageDirectoryPath}/mclauncher`;
   
@@ -207,7 +217,7 @@ openWithIntent = (filePath) => {
         console.log('Todos os arquivos foram excluídos.');
         this.setState({
           showDeleteButton: true,
-          downloadCompleteMessage: '', // Limpe a mensagem de download
+          downloadCompleteMessage: '',
         });
       })
       .catch((error) => {
@@ -215,7 +225,18 @@ openWithIntent = (filePath) => {
       });
   };
 
-// Renderiza um item da lista de versões
+  formatSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  formatSpeed = (bps) => {
+    if (bps < 1024) return `${bps.toFixed(2)} B/s`;
+    if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(2)} KB/s`;
+    return `${(bps / (1024 * 1024)).toFixed(2)} MB/s`;
+  };
+
   renderVersionItem = ({ item }) => {
     return (
       <TouchableHighlight
@@ -227,7 +248,7 @@ openWithIntent = (filePath) => {
       </TouchableHighlight>
     );
   };
-// Método de renderização principal
+
   render() {
     return (
       <View style={styles.container}>
@@ -239,14 +260,14 @@ openWithIntent = (filePath) => {
             color="#1a620b"
           />
         )}
-          <View style={styles.messageContainer}>
-    {this.state.downloadErrorMessage !== '' && (
-      <Text style={styles.errorMessage}>{this.state.downloadErrorMessage}</Text>
-    )}
-    {this.state.downloadSuccessMessage !== '' && (
-      <Text style={styles.successMessage}>{this.state.downloadSuccessMessage}</Text>
-    )}
-  </View>
+        <View style={styles.messageContainer}>
+          {this.state.downloadErrorMessage !== '' && (
+            <Text style={styles.errorMessage}>{this.state.downloadErrorMessage}</Text>
+          )}
+          {this.state.downloadSuccessMessage !== '' && (
+            <Text style={styles.successMessage}>{this.state.downloadSuccessMessage}</Text>
+          )}
+        </View>
         <View style={styles.header}>
           <View style={styles.logoContainer}>
             <Image source={require('./android/app/src/main/res/mipmap-xxxhdpi/title.png')} style={styles.logo} resizeMode="contain" />
@@ -294,10 +315,17 @@ openWithIntent = (filePath) => {
             </Tab.Navigator>
           </NavigationContainer>
         )}
-// Barra de download: TODO: Modificações na funcionalidade
         {this.state.downloading && (
           <View style={styles.modalContainer}>
-            <Text style={styles.modalText}>Baixando... {this.state.downloadProgress.toFixed(2)}%</Text>
+            <Text style={styles.modalText}>
+              Baixando... {this.state.downloadProgress.toFixed(2)}%
+            </Text>
+            <Text style={styles.modalText}>
+              {this.formatSize(this.state.downloadedSize)} / {this.formatSize(this.state.totalSize)}
+            </Text>
+            <Text style={styles.modalText}>
+              Velocidade: {this.formatSpeed(this.state.downloadSpeed)}
+            </Text>
             <ProgressBar
               styleAttr="Horizontal"
               color="#1a620b"
@@ -311,7 +339,7 @@ openWithIntent = (filePath) => {
     );
   }
 }
-// Componente para a tela de versões estáveis
+
 function StableScreen({ versions, openLink }) {
   const stableVersions = versions.filter((version) => version.tipo === 'Stable');
 
@@ -333,7 +361,7 @@ function StableScreen({ versions, openLink }) {
     </View>
   );
 }
-// Componente para a tela de Sobre
+
 function AboutScreen() {
   const telegramUsername = 'Mr_Purple_666';
 
@@ -352,7 +380,7 @@ function AboutScreen() {
     </View>
   );
 }
-// Componente para a tela de versões beta
+
 function BetaScreen({ versions, openLink }) {
   const betaVersions = versions.filter((version) => version.tipo === 'Beta');
 
@@ -374,7 +402,7 @@ function BetaScreen({ versions, openLink }) {
     </View>
   );
 }
-// Componente para a tela de versões legacy
+
 function LegacyScreen({ versions, openLink }) {
   const legacyVersions = versions.filter((version) => version.tipo === 'Legacy');
 
@@ -396,7 +424,7 @@ function LegacyScreen({ versions, openLink }) {
     </View>
   );
 }
-// Estilos do aplicativo
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -476,9 +504,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
   modalText: {
-    fontSize: 24,
+    fontSize: 18,
     color: 'white',
-    marginBottom: 20,
+    marginBottom: 10,
   },
 });
 
