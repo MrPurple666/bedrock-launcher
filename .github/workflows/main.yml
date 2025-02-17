@@ -31,11 +31,18 @@ jobs:
           rm -rf node_modules package-lock.json
           npm install
 
-      - name: Update npm packages
-        run: |
+      - name: Install React Native CLI and Android tools
+         run: |
           npm install -g npm-check-updates
+          npm install -g react-native-cli
           ncu -u
+          npm install @react-native-community/cli-platform-android --save-dev
           npm install --legacy-peer-deps  # Use --legacy-peer-deps to avoid conflicts
+
+      - name: Install React Native CLI and Android tools
+        run: |
+          npm install -g react-native-cli
+          npm install @react-native-community/cli-platform-android --save-dev
 
       - name: Display package.json
         run: cat package.json
