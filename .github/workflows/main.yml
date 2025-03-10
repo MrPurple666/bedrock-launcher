@@ -20,10 +20,17 @@ jobs:
           java-version: '17'
           distribution: 'adopt'
 
+      - name: Read Node.js version from package.json
+        id: node-version
+        run: |
+          NODE_VERSION=$(node -p "require('./package.json').engines.node")
+          echo "Node.js version from package.json: $NODE_VERSION"
+          echo "node_version=$NODE_VERSION" >> $GITHUB_OUTPUT
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '${{ steps.node-version.outputs.node_version }}'
 
       - name: Clean npm cache and reinstall dependencies
         run: |
